@@ -1,0 +1,61 @@
+{
+  "name": "bun-node-common",
+  "module": "index.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "version": "2.0.0",
+  "description": "A collection of useful building blocks for backend services built with Bun.js. Includes API server, RabbitMQ client, Sequelize helpers, JWT utilities, logging, and more.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/user/bun-node-common.git"
+  },
+  "author": "Alessio Cavallo",
+  "license": "MIT",
+  "keywords": [
+    "bun",
+    "nodejs",
+    "api-server",
+    "rabbitmq",
+    "sequelize",
+    "jwt",
+    "logging",
+    "typescript",
+    "backend",
+    "microservices"
+  ],
+  "scripts": {
+    "publish:prod": "bun run build && bun publish",
+    "build": "rm -rf ./dist && bun build --target=node ./src/index.ts --outfile=dist/index.js && bun run build:declaration",
+    "build:declaration": "tsc --emitDeclarationOnly --project tsconfig.types.json",
+    "postbuild": "rimraf tsconfig.types.tsbuildinfo"
+  },
+  "dependencies": {
+    "@datalust/winston-seq": "^3.0.1",
+    "amqplib": "^0.10.9",
+    "axios": "^1.12.2",
+    "bs58": "^6.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.16.3",
+    "pg-hstore": "^2.3.4",
+    "rxjs": "^7.8.2",
+    "sequelize": "^6.37.7",
+    "uuid": "^13.0.0",
+    "winston": "^3.17.0"
+  },
+  "devDependencies": {
+    "@types/amqplib": "^0.10.7",
+    "@types/bun": "latest",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^24.5.2",
+    "@types/uuid": "^11.0.0",
+    "@types/winston": "^2.4.4",
+    "rimraf": "^6.0.1"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "files": [
+    "dist/**/*"
+  ]
+}

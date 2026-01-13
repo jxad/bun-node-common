@@ -1,0 +1,12 @@
+# Cursor IDE files
+.cursor/
+
+# Development files
+bunfig.toml
+bun.lock
+
+# Other common excludes
+*.log
+.DS_Store
+.vscode/
+.idea/
