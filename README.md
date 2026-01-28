@@ -225,7 +225,7 @@ server.defineGetRoute("/users/:id", async (req, res) => {
 | `logger`        | Structured logging with Winston and Seq               |
 | `action`        | Request/Response action pattern                       |
 | `domain`        | Domain ID utilities and validation                    |
-| `event-bus`     | In-memory event bus with RxJS                         |
+| `event-bus`     | In-memory event bus                                   |
 | `job-scheduler` | Cron-like job scheduling                              |
 | `task-poller`   | Periodic polling with backoff                         |
 | `semaphore`     | Concurrency limiting                                  |

@@ -1,6 +1,6 @@
 import type { EventBus } from "../../event-bus/event-bus";
-import type { ValidationResult, ValidationError } from "./models";
 import { DomainValidationEvent } from "./domain-validation-event";
+import type { ValidationError, ValidationResult } from "./models";
 
 /**
  * Helper class to manage domain validation through event bus
@@ -19,7 +19,7 @@ export class DomainValidator {
   async validateWithEvent<TData, TEvent extends DomainValidationEvent<TData>>(
     event: TEvent
   ): Promise<ValidationResult> {
-    const results = await this.eventBus.request<TEvent, ValidationResult>(event);
+    const results = await this.eventBus.requestAll<TEvent, ValidationResult>(event);
     return this.aggregateResults(results);
   }
 
