@@ -1,14 +1,15 @@
 # Event Bus
 
-Event bus system with request-response support for asynchronous communication between components.
+Event bus built on top of Node.js/Bun `EventEmitter` with typed request-response support.
 
 ## Features
 
-- **Classic Publish/Subscribe**: Fire-and-forget events
-- **Request/Response**: Events that await responses from handlers
+- **Built on EventEmitter**: Leverages the battle-tested native implementation
+- **Classic Publish/Subscribe**: Fire-and-forget events with multiple listeners
+- **Request/Response (single)**: Events that await a single handler's response
+- **Request/Response (multi)**: Aggregation pattern with multiple handlers (e.g., validation)
 - **Async Support**: Handlers can be sync or async
-- **Response Aggregation**: Collects responses from all handlers
-- **Timeout**: Support for request timeouts
+- **Timeout with cleanup**: Proper timer cleanup to avoid memory leaks
 - **Type-safe**: Full TypeScript support
 
 ## Basic Usage
@@ -16,7 +17,7 @@ Event bus system with request-response support for asynchronous communication be
 ### Publish/Subscribe (Fire-and-forget)
 
 ```typescript
-import { EventBus } from "./event-bus";
+import { EventBus, EventBusEventBase } from "./event-bus";
 
 const eventBus = new EventBus();
 
@@ -27,57 +28,92 @@ class UserCreatedEvent implements EventBusEventBase {
   constructor(public userId: string, public email: string) {}
 }
 
-// Register a subscriber
+// Register multiple subscribers (allowed)
 eventBus.subscribe(UserCreatedEvent, (event) => {
   console.log(`User created: ${event.email}`);
 });
 
-// Publish the event
+eventBus.subscribe(UserCreatedEvent, (event) => {
+  sendWelcomeEmail(event.email);
+});
+
+// Publish the event - all subscribers are notified
 eventBus.publish(new UserCreatedEvent("123", "user@example.com"));
 ```
 
-### Request/Response
+### Request/Response (Single Handler)
+
+For classic request-response where exactly one handler responds:
 
 ```typescript
-import { RequestEventBase, ValidationResult } from "./models";
+import { EventBus, RequestEventBase } from "./event-bus";
 
 // Define a request-response event
-class ValidateEmailEvent implements RequestEventBase<boolean> {
-  type = ValidateEmailEvent.name;
+class GetUserEvent implements RequestEventBase<User> {
+  type = GetUserEvent.name;
 
   constructor(
-    public email: string,
+    public userId: string,
     public timeout?: number
   ) {}
 }
 
-// Register a handler that returns a response
-eventBus.onRequest(ValidateEmailEvent, async (event) => {
-  const exists = await checkEmailExists(event.email);
-  return !exists; // true if valid
+// Register a single handler (only one allowed!)
+eventBus.onRequest(GetUserEvent, async (event) => {
+  return await db.findUser(event.userId);
 });
 
-// Send request and await response
-const event = new ValidateEmailEvent("test@example.com", 5000);
-const results = await eventBus.request(event);
-// results is an array of all responses
+// This would throw: "Handler already registered for event type: GetUserEvent"
+// eventBus.onRequest(GetUserEvent, anotherHandler);
 
-// Or get only the first response
-const isValid = await eventBus.requestFirst(event);
+// Send request and await response
+const user = await eventBus.request(new GetUserEvent("user-123", 5000));
+```
+
+### Request/Response (Multiple Handlers)
+
+For aggregation patterns like validation where multiple handlers contribute:
+
+```typescript
+import { EventBus, RequestEventBase } from "./event-bus";
+import { ValidationResult } from "./models";
+
+// Define a validation event
+class ValidateUserEvent implements RequestEventBase<ValidationResult> {
+  type = ValidateUserEvent.name;
+
+  constructor(
+    public data: UserData,
+    public timeout?: number
+  ) {}
+}
+
+// Register multiple validators (allowed with onRequestMulti)
+eventBus.onRequestMulti(ValidateUserEvent, async (event) => {
+  if (!event.data.email.includes("@")) {
+    return { valid: false, errors: [{ code: "invalid_email", message: "Invalid email" }] };
+  }
+  return { valid: true, errors: [] };
+});
+
+eventBus.onRequestMulti(ValidateUserEvent, async (event) => {
+  if (event.data.name.length < 2) {
+    return { valid: false, errors: [{ code: "name_too_short", message: "Name too short" }] };
+  }
+  return { valid: true, errors: [] };
+});
+
+// Get responses from ALL handlers
+const results = await eventBus.requestAll(new ValidateUserEvent(userData));
+// results: ValidationResult[] - array of all responses to aggregate
 ```
 
 ## API
 
-### EventBus
+### EventBus (extends EventEmitter)
 
 #### subscribe<T>(eventClass, listener)
-Registers a listener for classic publish/subscribe events.
-
-```typescript
-eventBus.subscribe(MyEvent, (event) => {
-  // handle event
-});
-```
+Registers a listener for classic publish/subscribe events. Multiple listeners allowed.
 
 #### unsubscribe<T>(eventClass, listener)
 Removes a listener.
@@ -85,32 +121,56 @@ Removes a listener.
 #### publish<T>(event)
 Publishes an event to all subscribers.
 
+---
+
 #### onRequest<T, R>(eventClass, handler)
-Registers a handler for request-response events.
+Registers a handler for single-handler request-response. **Only ONE handler allowed**.
 
 ```typescript
 eventBus.onRequest(MyRequestEvent, async (event) => {
-  // process request
   return result;
 });
+// Throws if called again for the same event type!
 ```
 
 #### offRequest<T, R>(eventClass, handler)
-Removes a request-response handler.
+Removes a single-handler request handler.
 
-#### request<T, R>(event): Promise<R[]>
-Sends a request and awaits responses from all handlers.
+#### request<T, R>(event): Promise<R>
+Sends a request and awaits the response from the single registered handler.
+
+- Returns the handler's response
+- Throws if no handler is registered
+- Supports timeout via `event.timeout`
+
+#### hasRequestHandler<T>(eventClass): boolean
+Checks if a single-handler is registered for a request event type.
+
+---
+
+#### onRequestMulti<T, R>(eventClass, handler)
+Registers a handler for multi-handler request-response. **Multiple handlers allowed**.
+
+```typescript
+eventBus.onRequestMulti(ValidateEvent, validator1);
+eventBus.onRequestMulti(ValidateEvent, validator2); // OK!
+```
+
+#### offRequestMulti<T, R>(eventClass, handler)
+Removes a multi-handler request handler.
+
+#### requestAll<T, R>(event): Promise<R[]>
+Sends a request and awaits responses from ALL registered handlers.
 
 - Returns array of all responses
+- Returns empty array if no handlers registered
 - Supports timeout via `event.timeout`
-- Returns empty array if no handler is registered
 
-#### requestFirst<T, R>(event): Promise<R>
-Sends a request and awaits the first response.
+#### hasRequestMultiHandlers<T>(eventClass): boolean
+Checks if any multi-handlers are registered for a request event type.
 
-- Returns only the first response
-- Throws error if no handler is registered
-- Supports timeout via `event.timeout`
+#### getRequestMultiHandlerCount<T>(eventClass): number
+Returns the number of multi-handlers registered for a request event type.
 
 ## Types
 
@@ -132,86 +192,50 @@ interface RequestEventBase<TResponse = any> extends EventBusEventBase {
 }
 ```
 
-### ValidationEventBase
-Interface for validation events (extends RequestEventBase).
-
-```typescript
-interface ValidationEventBase extends RequestEventBase<ValidationResult> {
-  entityType: string;
-  operation: string;
-  data: any;
-}
-```
-
-### ValidationResult
-Result of a validation.
-
-```typescript
-interface ValidationResult {
-  valid: boolean;
-  errors: ValidationError[];
-}
-```
-
-### ValidationError
-Details of a validation error.
-
-```typescript
-interface ValidationError {
-  code: string;
-  message: string;
-  context?: Record<string, any>;
-}
-```
-
 ## Common Patterns
 
-### Multiple Handlers with Aggregation
+### Timeout with Proper Cleanup
 
 ```typescript
-// Handler 1
-eventBus.onRequest(ValidateUserEvent, async (event) => {
-  if (!isValidEmail(event.data.email)) {
-    return validationError("invalid_email", "Invalid email");
-  }
-  return validationSuccess();
-});
+const event = new MyRequestEvent(data);
+event.timeout = 5000; // 5 seconds
 
-// Handler 2
-eventBus.onRequest(ValidateUserEvent, async (event) => {
-  const exists = await db.findByEmail(event.data.email);
-  if (exists) {
-    return validationError("email_exists", "Email already exists");
-  }
-  return validationSuccess();
-});
-
-// Send request - all handlers are executed
-const results = await eventBus.request(new ValidateUserEvent({...}));
-```
-
-### Timeout
-
-```typescript
-const event = new MyRequestEvent(data, 5000); // 5 seconds timeout
 try {
-  const results = await eventBus.request(event);
+  const result = await eventBus.request(event);
 } catch (error) {
   // Error: Request timeout after 5000ms for event type: MyRequestEvent
 }
+// Timer is properly cleaned up whether request succeeds, fails, or times out
 ```
 
 ### Handler Cleanup
 
 ```typescript
-const handler = async (event) => { /* ... */ };
+const handler = async (event: MyEvent) => { /* ... */ };
 
-eventBus.onRequest(MyEvent, handler);
+eventBus.onRequestMulti(MyEvent, handler);
 
 // When no longer needed
-eventBus.offRequest(MyEvent, handler);
+eventBus.offRequestMulti(MyEvent, handler);
 ```
+
+### Conditional Request
+
+```typescript
+if (eventBus.hasRequestHandler(GetUserEvent)) {
+  const user = await eventBus.request(new GetUserEvent(userId));
+}
+```
+
+## Single vs Multi Handler: When to Use
+
+| Use Case | API | Rationale |
+|----------|-----|-----------|
+| Query (get data) | `onRequest`/`request` | Single source of truth |
+| Command (execute action) | `onRequest`/`request` | Single executor |
+| Validation | `onRequestMulti`/`requestAll` | Aggregate validators |
+| Authorization | `onRequestMulti`/`requestAll` | Multiple policies |
 
 ## Integration with Domain Validation
 
-For a complete domain validation system, see [Domain Validation](../domain/validation/README.md).
+For a complete domain validation system using `onRequestMulti`/`requestAll`, see [Domain Validation](../domain/validation/README.md).

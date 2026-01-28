@@ -55,7 +55,8 @@ import { validationSuccess, validationError } from "./validation";
 const eventBus = new EventBus();
 
 // Register validator for CreatePaymentValidationEvent
-eventBus.onRequest(CreatePaymentValidationEvent, async (event) => {
+// Use onRequestMulti to allow multiple validators per event type
+eventBus.onRequestMulti(CreatePaymentValidationEvent, async (event) => {
   // Type-safe access to event.data
   const { amount, currency } = event.data;
   
@@ -71,7 +72,7 @@ eventBus.onRequest(CreatePaymentValidationEvent, async (event) => {
 });
 
 // Second validator for the same event (check limits)
-eventBus.onRequest(CreatePaymentValidationEvent, async (event) => {
+eventBus.onRequestMulti(CreatePaymentValidationEvent, async (event) => {
   const { userId, amount } = event.data;
   
   const dailyTotal = await getUserDailyPaymentTotal(userId);
@@ -250,7 +251,7 @@ interface ValidationEventBase<TData> extends RequestEventBase<ValidationResult> 
 ```typescript
 import { validationErrors } from "./validation";
 
-eventBus.onRequest(CreateUserValidationEvent, async (event) => {
+eventBus.onRequestMulti(CreateUserValidationEvent, async (event) => {
   const errors: ValidationError[] = [];
   
   if (!event.data.email.includes("@")) {
@@ -274,7 +275,7 @@ eventBus.onRequest(CreateUserValidationEvent, async (event) => {
 ### Cross-Entity Validation
 
 ```typescript
-eventBus.onRequest(CreateOrderValidationEvent, async (event) => {
+eventBus.onRequestMulti(CreateOrderValidationEvent, async (event) => {
   const { userId, items } = event.orderData;
   
   // Verify user
@@ -298,7 +299,7 @@ eventBus.onRequest(CreateOrderValidationEvent, async (event) => {
 ### Context for Debugging
 
 ```typescript
-eventBus.onRequest(TransferFundsValidationEvent, async (event) => {
+eventBus.onRequestMulti(TransferFundsValidationEvent, async (event) => {
   const account = await getAccount(event.fromAccountId);
   
   if (account.balance < event.amount) {
@@ -334,7 +335,7 @@ describe("Payment Validation", () => {
   });
   
   it("should reject invalid payments", async () => {
-    eventBus.onRequest(CreatePaymentValidationEvent, async (event) => {
+    eventBus.onRequestMulti(CreatePaymentValidationEvent, async (event) => {
       if (event.data.amount <= 0) {
         return validationError("invalid_amount", "Amount must be positive");
       }
@@ -400,7 +401,8 @@ import { CreatePaymentValidationEvent } from "../events/payment-events";
 import { validationError, validationSuccess } from "../validation";
 
 export function registerPaymentValidators(eventBus: EventBus) {
-  eventBus.onRequest(CreatePaymentValidationEvent, async (event) => {
+  // Use onRequestMulti for validation (allows multiple validators)
+  eventBus.onRequestMulti(CreatePaymentValidationEvent, async (event) => {
     if (event.data.amount <= 0) {
       return validationError("invalid_amount", "Amount must be positive");
     }

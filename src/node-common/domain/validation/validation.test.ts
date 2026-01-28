@@ -2,14 +2,14 @@
  * Domain validation system tests
  */
 
-import { describe, it, expect, beforeEach } from "bun:test";
+import { beforeEach, describe, expect, it } from "bun:test";
 import { EventBus } from "../../event-bus";
-import { 
-  DomainValidator, 
-  DomainValidationEvent,
+import {
   DomainValidationError,
-  validationSuccess, 
-  validationError 
+  DomainValidationEvent,
+  DomainValidator,
+  validationError,
+  validationSuccess
 } from "./index";
 
 // Typed events for tests
@@ -74,7 +74,7 @@ describe("DomainValidator", () => {
   });
 
   it("should collect validation error from single handler", async () => {
-    eventBus.onRequest(CreateUserValidationEvent, async (event: CreateUserValidationEvent) => {
+    eventBus.onRequestMulti(CreateUserValidationEvent, async (event: CreateUserValidationEvent) => {
       if (!event.data.email.includes("@")) {
         return validationError("invalid_email", "Email format is invalid");
       }
@@ -92,7 +92,7 @@ describe("DomainValidator", () => {
 
   it("should aggregate errors from multiple handlers", async () => {
     // Handler 1
-    eventBus.onRequest(CreateUserValidationEvent, async (event: CreateUserValidationEvent) => {
+    eventBus.onRequestMulti(CreateUserValidationEvent, async (event: CreateUserValidationEvent) => {
       if (!event.data.email.includes("@")) {
         return validationError("invalid_email", "Email format is invalid");
       }
@@ -100,7 +100,7 @@ describe("DomainValidator", () => {
     });
 
     // Handler 2
-    eventBus.onRequest(CreateUserValidationEvent, async (event: CreateUserValidationEvent) => {
+    eventBus.onRequestMulti(CreateUserValidationEvent, async (event: CreateUserValidationEvent) => {
       if (event.data.name.length < 2) {
         return validationError("name_too_short", "Name must be at least 2 characters");
       }
@@ -117,8 +117,8 @@ describe("DomainValidator", () => {
   });
 
   it("should pass when all handlers return success", async () => {
-    eventBus.onRequest(CreateUserValidationEvent, async () => validationSuccess());
-    eventBus.onRequest(CreateUserValidationEvent, async () => validationSuccess());
+    eventBus.onRequestMulti(CreateUserValidationEvent, async () => validationSuccess());
+    eventBus.onRequestMulti(CreateUserValidationEvent, async () => validationSuccess());
 
     const event = new CreateUserValidationEvent({ name: "John", email: "john@example.com" });
     const result = await validator.validateWithEvent(event);
@@ -128,7 +128,7 @@ describe("DomainValidator", () => {
   });
 
   it("should throw DomainValidationError when using validateOrThrowWithEvent", async () => {
-    eventBus.onRequest(CreateUserValidationEvent, async (event: CreateUserValidationEvent) => {
+    eventBus.onRequestMulti(CreateUserValidationEvent, async (event: CreateUserValidationEvent) => {
       if (!event.data.email.includes("@")) {
         return validationError("invalid_email", "Email format is invalid");
       }
@@ -143,7 +143,7 @@ describe("DomainValidator", () => {
   });
 
   it("should not throw when validation passes with validateOrThrowWithEvent", async () => {
-    eventBus.onRequest(CreateUserValidationEvent, async () => validationSuccess());
+    eventBus.onRequestMulti(CreateUserValidationEvent, async () => validationSuccess());
 
     const event = new CreateUserValidationEvent({ name: "John", email: "john@example.com" });
 
@@ -153,7 +153,7 @@ describe("DomainValidator", () => {
   });
 
   it("should support typed events with type-safe data access", async () => {
-    eventBus.onRequest(CreateUserValidationEvent, async (event: CreateUserValidationEvent) => {
+    eventBus.onRequestMulti(CreateUserValidationEvent, async (event: CreateUserValidationEvent) => {
       if (!event.data.email.includes("@")) {
         return validationError("invalid_email", "Email format is invalid");
       }
@@ -168,7 +168,7 @@ describe("DomainValidator", () => {
   });
 
   it("should support update events with typed data", async () => {
-    eventBus.onRequest(UpdateUserValidationEvent, async (event: UpdateUserValidationEvent) => {
+    eventBus.onRequestMulti(UpdateUserValidationEvent, async (event: UpdateUserValidationEvent) => {
       if (event.data.email && !event.data.email.includes("@")) {
         return validationError("invalid_email", "Email format is invalid");
       }
@@ -183,7 +183,7 @@ describe("DomainValidator", () => {
   });
 
   it("should support delete events with typed data", async () => {
-    eventBus.onRequest(DeleteOrderValidationEvent, async (event: DeleteOrderValidationEvent) => {
+    eventBus.onRequestMulti(DeleteOrderValidationEvent, async (event: DeleteOrderValidationEvent) => {
       if (event.data.orderId === "shipped-order") {
         return validationError("cannot_delete", "Cannot delete shipped order");
       }
@@ -198,7 +198,7 @@ describe("DomainValidator", () => {
   });
 
   it("should include context in validation errors", async () => {
-    eventBus.onRequest(CreatePaymentValidationEvent, async (event: CreatePaymentValidationEvent) => {
+    eventBus.onRequestMulti(CreatePaymentValidationEvent, async (event: CreatePaymentValidationEvent) => {
       if (event.data.amount <= 0) {
         return validationError("invalid_amount", "Amount must be positive", { 
           amount: event.data.amount 
@@ -215,7 +215,7 @@ describe("DomainValidator", () => {
 
   it("should support custom validation events that extend DomainValidationEvent", async () => {
     // Register handler for specific event
-    eventBus.onRequest(CreatePaymentValidationEvent, async (event: CreatePaymentValidationEvent) => {
+    eventBus.onRequestMulti(CreatePaymentValidationEvent, async (event: CreatePaymentValidationEvent) => {
       if (event.data.amount <= 0) {
         return validationError("invalid_amount", "Amount must be positive");
       }
@@ -244,7 +244,7 @@ describe("DomainValidator", () => {
   });
 
   it("should have type-safe access to event data properties", async () => {
-    eventBus.onRequest(CreatePaymentValidationEvent, async (event: CreatePaymentValidationEvent) => {
+    eventBus.onRequestMulti(CreatePaymentValidationEvent, async (event: CreatePaymentValidationEvent) => {
       // TypeScript should allow accessing data properties with full type safety
       const amount = event.data.amount;
       const currency = event.data.currency;
@@ -293,7 +293,7 @@ describe("EventBus request-response with typed events", () => {
   });
 
   it("should handle request with single handler", async () => {
-    eventBus.onRequest(CreateUserValidationEvent, async () => validationSuccess());
+    eventBus.onRequestMulti(CreateUserValidationEvent, async () => validationSuccess());
 
     const event = new CreateUserValidationEvent({ name: "John", email: "john@example.com" });
     const result = await validator.validateWithEvent(event);
@@ -302,9 +302,9 @@ describe("EventBus request-response with typed events", () => {
   });
 
   it("should handle request with multiple handlers", async () => {
-    eventBus.onRequest(CreateUserValidationEvent, async () => validationSuccess());
-    eventBus.onRequest(CreateUserValidationEvent, async () => validationError("e1", "Error 1"));
-    eventBus.onRequest(CreateUserValidationEvent, async () => validationError("e2", "Error 2"));
+    eventBus.onRequestMulti(CreateUserValidationEvent, async () => validationSuccess());
+    eventBus.onRequestMulti(CreateUserValidationEvent, async () => validationError("e1", "Error 1"));
+    eventBus.onRequestMulti(CreateUserValidationEvent, async () => validationError("e2", "Error 2"));
 
     const event = new CreateUserValidationEvent({ name: "John", email: "john@example.com" });
     const result = await validator.validateWithEvent(event);
@@ -316,12 +316,12 @@ describe("EventBus request-response with typed events", () => {
   it("should support handler removal", async () => {
     const handler = async () => validationSuccess();
     
-    eventBus.onRequest(CreateUserValidationEvent, handler);
+    eventBus.onRequestMulti(CreateUserValidationEvent, handler);
     let event = new CreateUserValidationEvent({ name: "John", email: "john@example.com" });
     let result = await validator.validateWithEvent(event);
     expect(result.valid).toBe(true);
     
-    eventBus.offRequest(CreateUserValidationEvent, handler);
+    eventBus.offRequestMulti(CreateUserValidationEvent, handler);
     event = new CreateUserValidationEvent({ name: "John", email: "john@example.com" });
     result = await validator.validateWithEvent(event);
     expect(result.valid).toBe(true); // No handlers = success
